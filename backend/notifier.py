@@ -2,7 +2,9 @@
 Multi-platform notification handler
 Supports Discord, Slack, Telegram, Microsoft Teams, Email, and Generic webhooks
 """
+import html
 import logging
+import re
 import requests
 import smtplib
 from email.mime.text import MIMEText
@@ -14,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 class NotificationHandler:
     """Handle notifications to multiple platforms"""
+
+    # Telegram custom emoji are represented in HTML mode with this tag. Keep the
+    # fallback character so the same message remains readable on other targets.
+    TELEGRAM_CUSTOM_EMOJI_RE = re.compile(
+        r'<tg-emoji\s+emoji-id=["\'](\d+)["\']\s*>(.*?)</tg-emoji>',
+        re.IGNORECASE | re.DOTALL,
+    )
     
     def __init__(self, settings: Optional[Dict] = None):
         self.settings = settings or {}
@@ -75,7 +84,7 @@ class NotificationHandler:
             return False, 'Invalid Discord webhook URL'
         
         try:
-            payload = {'content': content}
+            payload = {'content': self._strip_telegram_custom_emoji_tags(content)}
             response = requests.post(webhook_url, json=payload, timeout=10)
             response.raise_for_status()
             return True, None
@@ -94,7 +103,7 @@ class NotificationHandler:
         
         try:
             # Convert markdown-like content to Slack format
-            slack_text = self._convert_to_slack_format(content)
+            slack_text = self._convert_to_slack_format(self._strip_telegram_custom_emoji_tags(content))
             payload = {'text': slack_text}
             response = requests.post(webhook_url, json=payload, timeout=10)
             response.raise_for_status()
@@ -130,7 +139,7 @@ class NotificationHandler:
             payload = {
                 'chat_id': chat_id,
                 'text': telegram_text,
-                'parse_mode': 'Markdown'
+                'parse_mode': 'HTML'
             }
             if message_thread_id is not None:
                 payload['message_thread_id'] = message_thread_id
@@ -158,7 +167,12 @@ class NotificationHandler:
         
         try:
             # Format as Teams message card
-            teams_text = self._convert_to_teams_format(app_name, version, release_notes, formatted_content)
+            teams_text = self._convert_to_teams_format(
+                app_name,
+                version,
+                release_notes,
+                self._strip_telegram_custom_emoji_tags(formatted_content),
+            )
             
             payload = {
                 '@type': 'MessageCard',
@@ -201,10 +215,11 @@ class NotificationHandler:
             msg['To'] = to_email
             
             # Convert formatted content to HTML
-            html_content = self._convert_to_html_format(formatted_content)
+            clean_content = self._strip_telegram_custom_emoji_tags(formatted_content)
+            html_content = self._convert_to_html_format(clean_content)
             
             # Add both plain text and HTML versions
-            text_part = MIMEText(formatted_content, 'plain')
+            text_part = MIMEText(clean_content, 'plain')
             html_part = MIMEText(html_content, 'html')
             
             msg.attach(text_part)
@@ -246,7 +261,10 @@ class NotificationHandler:
                 payload_str = payload_template.replace('{{app_name}}', app_name)
                 payload_str = payload_str.replace('{{version}}', version)
                 payload_str = payload_str.replace('{{release_notes}}', release_notes)
-                payload_str = payload_str.replace('{{formatted_content}}', formatted_content)
+                payload_str = payload_str.replace(
+                    '{{formatted_content}}',
+                    self._strip_telegram_custom_emoji_tags(formatted_content),
+                )
                 
                 import json
                 try:
@@ -259,7 +277,7 @@ class NotificationHandler:
                     'app_name': app_name,
                     'version': version,
                     'release_notes': release_notes,
-                    'formatted_content': formatted_content
+                    'formatted_content': self._strip_telegram_custom_emoji_tags(formatted_content)
                 }
             
             # Set default headers if not provided
@@ -283,12 +301,36 @@ class NotificationHandler:
         return text
     
     def _convert_to_telegram_format(self, content: str) -> str:
-        """Convert content to Telegram Markdown format"""
-        # Telegram supports Markdown, but has some limitations
-        # Escape special characters that might break formatting
-        text = content
-        # Telegram uses *bold*, _italic_, `code`, and ```code blocks```
-        return text
+        """Convert app markdown and custom emoji markup to Telegram HTML."""
+        parts = []
+        position = 0
+
+        for match in self.TELEGRAM_CUSTOM_EMOJI_RE.finditer(content):
+            parts.append(self._convert_telegram_text_to_html(content[position:match.start()]))
+            emoji_id, fallback = match.groups()
+            parts.append(
+                f'<tg-emoji emoji-id="{emoji_id}">'
+                f'{html.escape(fallback, quote=False)}'
+                '</tg-emoji>'
+            )
+            position = match.end()
+
+        parts.append(self._convert_telegram_text_to_html(content[position:]))
+        return ''.join(parts)
+
+    @classmethod
+    def _strip_telegram_custom_emoji_tags(cls, content: str) -> str:
+        """Use a custom emoji's fallback character outside Telegram."""
+        return cls.TELEGRAM_CUSTOM_EMOJI_RE.sub(lambda match: match.group(2), content)
+
+    @staticmethod
+    def _convert_telegram_text_to_html(text: str) -> str:
+        """Escape text and convert the limited markdown emitted by the formatter."""
+        escaped = html.escape(text, quote=False)
+        escaped = re.sub(r'(?m)^#{1,6}\s+(.+)$', r'<b>\1</b>', escaped)
+        escaped = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', escaped)
+        escaped = re.sub(r'(?<!\*)\*([^*\n]+)\*(?!\*)', r'<b>\1</b>', escaped)
+        return escaped
     
     def _convert_to_teams_format(self, app_name: str, version: str, release_notes: str, formatted_content: str) -> str:
         """Convert content to Microsoft Teams format"""

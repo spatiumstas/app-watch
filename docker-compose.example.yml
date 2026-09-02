@@ -4,7 +4,7 @@
 
 services:
   app-watch:
-    image: rajnishdock/app-watch:latest
+    image: ghcr.io/spatiumstas/app-watch:aio
     container_name: app-watch
     restart: unless-stopped
     ports:

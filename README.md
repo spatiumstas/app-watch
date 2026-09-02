@@ -32,7 +32,7 @@ Or copy and paste this content (it matches `docker-compose.example.yml` and the 
 ```yaml
 services:
   app-watch:
-    image: rajnishdock/app-watch:latest
+    image: ghcr.io/spatiumstas/app-watch:aio
     container_name: app-watch
     restart: unless-stopped
     ports:
@@ -48,6 +48,8 @@ services:
       retries: 3
       start_period: 40s
 ```
+
+The Compose sample follows the continuously published `AIO` branch image: `ghcr.io/spatiumstas/app-watch:aio`. To use a tagged Docker Hub release instead, replace the image with `rajnishdock/app-watch:<version>`.
 
 **Note:** The `./data` folder will be created automatically to store your app settings and version tracking data.
 
@@ -100,6 +102,16 @@ Before adding apps, you need to configure at least one notification destination.
 3. Copy the bot token (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
 4. Message [@userinfobot](https://t.me/userinfobot) to get your chat ID. For a forum topic, use `chat_id_topic_id` (for example `-1001234567890_2`).
 5. You can set the bot token in Settings for all apps, or per app
+
+### Telegram custom emoji in the version header
+
+Telegram custom emoji can be used inline in **Settings → Message Format → Version Header Format**. Replace a normal emoji with a custom emoji tag, keeping the normal emoji inside it as the fallback for Discord, Slack, email, and other destinations:
+
+```text
+<tg-emoji emoji-id="CUSTOM_EMOJI_ID">📲</tg-emoji> Update {app_name} for {platform}: v{version}
+```
+
+Use the numeric `custom_emoji_id` of an emoji that the bot is permitted to send. The Telegram message is sent in HTML mode so the emoji can animate inline; it is not posted as a separate sticker.
 
 **Microsoft Teams:**
 1. Go to your Teams channel

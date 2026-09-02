@@ -340,7 +340,7 @@ export function SettingsPage({ onCancel, message, showMessage, section = 'genera
                     placeholder="# v{version}"
                     className="form-input"
                   />
-                  <span className="form-hint">Available placeholders: {'{app_name}'}, {'{platform}'}, {'{version}'}. Examples: "# v{'{version}'}", "Version {'{version}'}", "**v{'{version}'}**"</span>
+                  <span className="form-hint">Available placeholders: {'{app_name}'}, {'{platform}'}, {'{version}'}. Telegram custom emoji: replace a normal emoji with {'<tg-emoji emoji-id="CUSTOM_EMOJI_ID">📲</tg-emoji>'}. The fallback emoji is shown in other destinations.</span>
                 </div>
 
                 <div className="form-group">
