@@ -20,6 +20,7 @@ from backend.blueprints.history import create_history_blueprint
 from backend.blueprints.settings import create_settings_blueprint
 from backend.blueprints.webhooks import create_webhooks_blueprint
 from backend.formatter import DiscordFormatter
+from backend.notification_profiles import resolve_notification_destination
 from backend.storage import StorageManager
 from backend.version import get_version
 from backend.auth import require_auth
@@ -151,12 +152,15 @@ def validate_notification_destination(dest, settings=None):
     """
     if not isinstance(dest, dict):
         return False, 'Each notification destination must be an object'
+
+    settings = settings or {}
+    dest, resolve_error = resolve_notification_destination(dest, settings)
+    if resolve_error:
+        return False, resolve_error
     
     dest_type = dest.get('type', '').lower().strip()
     if not dest_type:
         return False, 'Each notification destination must have a type'
-    
-    settings = settings or {}
     
     if dest_type == 'discord':
         webhook_url = dest.get('webhook_url', '').strip()
@@ -460,13 +464,15 @@ def setup_scheduler():
 
 # Authentication endpoints (public)
 @app.route('/api/auth/status', methods=['GET'])
+@require_auth(storage)
 def auth_status():
-    """Return API key for settings; user login is not used."""
+    """Return API key and Basic Auth status for settings."""
     auth = storage.get_auth()
+    basic_auth_enabled = bool(os.getenv('BASIC_AUTH_USERNAME') or os.getenv('BASIC_AUTH_PASSWORD'))
     return jsonify({
-        'enabled': False,
+        'enabled': basic_auth_enabled,
         'configured': True,
-        'auth_type': auth.get('auth_type', 'forms'),
+        'auth_type': 'basic' if basic_auth_enabled else auth.get('auth_type', 'forms'),
         'bypass_local_networks': False,
         'api_key': auth.get('api_key', ''),
     })
@@ -495,6 +501,7 @@ def health():
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
+@require_auth(storage)
 def serve_frontend(path):
     """Serve frontend - handle SPA routing"""
     # Don't handle API routes here - they're defined above
@@ -580,6 +587,7 @@ app.register_blueprint(
         setup_scheduler=setup_scheduler,
         app_version=APP_VERSION,
         reload_monitor=reload_monitor,
+        validate_notification_destination=validate_notification_destination,
         logger=logger,
     )
 )
